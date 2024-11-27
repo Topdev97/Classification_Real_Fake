@@ -1,5 +1,7 @@
 import sys
 import os
+import requests
+import base64
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QTableWidget, QFileDialog, QVBoxLayout, QHBoxLayout, QWidget, QLabel, QPushButton, QStyle, QComboBox, QMessageBox)
 from PyQt6.QtGui import QFont, QPixmap, QGuiApplication
 from PyQt6.QtCore import Qt, QSize
@@ -153,6 +155,18 @@ class MainWindow(QMainWindow):
         self.btn_check_image.setEnabled(False)
         self.btn_check_image.clicked.connect(self.check_image)
 
+        # API Call Button
+        self.btn_api_call = QPushButton('LLAMAR API')
+        self.btn_api_call.setStyleSheet('''QPushButton {
+            background-color: #28A745;
+            color: white;
+            border-radius: 2px;
+            font: bold 14px;
+            padding: 10px;
+            max-width: 200px;
+        } QPushButton:hover { background-color: #218838; }''')
+        self.btn_api_call.clicked.connect(self.call_api)
+
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setStyleSheet("border: 1px solid #2563EB;")
@@ -171,6 +185,7 @@ class MainWindow(QMainWindow):
         buttonlayout.addWidget(self.btn_open_file)
         buttonlayout.addWidget(self.btn_start_training)
         buttonlayout.addWidget(self.btn_check_image)
+        buttonlayout.addWidget(self.btn_api_call)
 
         layout.addLayout(titlelayout)
         layout.addWidget(self.image_label)
@@ -204,11 +219,9 @@ class MainWindow(QMainWindow):
 
     def check_image(self):
         if self.image_path:
-            # Get the image type and folder path
             image_type = self.image_type_selector.currentText()
             folder = 'real' if image_type == 'cars' else 'fake'  # Adjust this depending on your folder naming
 
-            # Check if the image is in the correct folder
             folder_path = os.path.join('data', image_type, folder)
             if self.image_path.startswith(folder_path):
                 result = f"The image is classified as {folder.capitalize()}."
@@ -228,6 +241,53 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, "No Image", "Please select an image first.", parent=self)
 
+    def call_api(self):
+        url = "https://classification-real-fake-backend.onrender.com/get-images"
+        headers = {
+            'Authorization': 'Bearer 123',
+            'Content-Type': 'application/json',
+        }
+
+        try:
+            response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                result = response.json()
+                print("Response:", result)
+
+                if "images" in result and isinstance(result["images"], list):
+                    images = result["images"]
+
+                    output_folder = "retrieved_images"
+                    os.makedirs(output_folder, exist_ok=True)
+
+                    for img in images:
+                        if "image" in img and "filename" in img:
+                            base64_image = img["image"]
+                            filename = img["filename"]
+
+                            image_data = base64.b64decode(base64_image)
+                            output_path = os.path.join(output_folder, filename)
+
+                            with open(output_path, "wb") as img_file:
+                                img_file.write(image_data)
+
+                            print(f"Image saved: {output_path}")
+
+                            if not hasattr(self, 'image_path') or not self.image_path:
+                                self.image_path = output_path
+                                pixmap = QPixmap(self.image_path)
+                                self.image_label.setPixmap(pixmap.scaled(self.image_label.size(), Qt.AspectRatioMode.KeepAspectRatio))
+                                self.btn_check_image.setEnabled(True)
+
+                    QMessageBox.information(self, "API Response", f"Images saved to {output_folder}")
+                else:
+                    QMessageBox.warning(self, "API Error", "Response does not contain valid image data.")
+            else:
+                QMessageBox.warning(self, "API Error", "Failed to get a response from the API.")
+        except Exception as e:
+            print(f"API call error: {e}")
+            QMessageBox.critical(self, "Error", f"An error occurred while calling the API: {e}")
+            
     def btn_minimize_clicked(self):
         self.showMinimized()
 
